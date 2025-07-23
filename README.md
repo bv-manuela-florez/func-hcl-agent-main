@@ -88,7 +88,7 @@ This application:
 
 ```json
 {
-  "message": "La producción bruta total de Hocol en mayo 2025 fue...",
+  "message": "La producción diaria gross desarrollo de la Hocha el 12 de abril de 2025 fue de 700 BOE. \n\nPuedes encontrar más detalles en el documento disponible [aquí](https://ecopetrol.sharepoint.com/sites/HOCOL-HOCOLBOT/Documentos%20compartidos/RP/RepDia_20250412(email).pdf)",
   "threadId": "thread456"
 }
 ```

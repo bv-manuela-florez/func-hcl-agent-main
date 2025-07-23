@@ -1,10 +1,13 @@
 import azure.functions as func
 import logging
 from azure.ai.projects import AIProjectClient
-from azure.identity import DefaultAzureCredential
+from azure.ai.agents.models import ListSortOrder
+from azure.identity import DefaultAzureCredential, ClientSecretCredential
 import os
 import json
-
+import time
+import re
+import requests  # <-- Añade importación de requests
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 @app.route(route="agent_httptrigger")
@@ -14,7 +17,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
     message = req.params.get('message')
     agentid = req.params.get('agentid')
     threadid = req.params.get('threadid')
-    
+
     if not message or not agentid:
         try:
             req_body = req.get_json()
@@ -25,25 +28,51 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             message = req_body.get('message')
             agentid = req_body.get('agentid')
             threadid = req_body.get('threadid')
-
+    logging.info(f"Received message: {message}, agentid: {agentid}, threadid: {threadid}")
     if not message or not agentid:
         return func.HttpResponse(
             "Pass in a message and agentid in the query string or in the request body for a personalized response.",
             status_code=400
         )
 
-    conn_str = os.environ.get("AIProjectConnString")
-    if not conn_str:
-        logging.error("AIProjectConnString is not set in local.settings.json or environment variables.")
-        return func.HttpResponse(
-            "Internal Server Error: Missing AIProjectConnString.",
-            status_code=500
-        )
+    try:
+        # Llama a la Azure Function que devuelve documentos
+        search_endpoint = os.environ.get("FUCTION_ENDPOINT")
+        search_params = {
+            "q": message,
+            "code": os.environ.get("FUNCTION_KEY")
+        }
+        logging.info(f"Calling search endpoint with params: {search_params}")
+        try:
+            search_response = requests.get(search_endpoint, params=search_params)
+            search_response.raise_for_status()
+            search_result = search_response.json()
+            docs = search_result.get("semantic_documents", [])
+            logging.info(f"Documentos obtenidos: {len(docs)}")
+            context = "\n\n".join([
+                f"Titulo de la tabla: {doc.get('metadata_spo_item_table_title')}\n"
+                # f"Descripción:\n{doc.get('content_description', '')}\n\n"
+                f"Enlace al documento: {doc.get('metadata_spo_item_path')}\n\n"
+                f"Markdown:\n{doc.get('markdown_content', '')}\n\n"
+                f"Fecha del reporte: {doc.get('metadata_spo_item_release_date')}\n\n"
+                # f"Embedding:\n{json.dumps(doc.get('embedding', [])) if doc.get('embedding') else ''}"
+                for doc in docs
+            ])
+            logging.info(f"Contexto obtenido: {context}")
+            message_with_context = f"Pregunta:\n{message}\n\nContexto:\n{context}"
+        except Exception as e:
+            logging.error(f"Error al obtener documentos: {str(e)}")
+            message_with_context = message
 
-    try:            
+        # Initialize the AIProjectClient with the endpoint
+        # pip install azure-ai-projects==1.0.0b11
         project_client = AIProjectClient(
-            credential=DefaultAzureCredential(),
-            endpoint=conn_str,
+            credential=ClientSecretCredential(
+                    tenant_id=os.environ["AZURE_TENANT_ID"],
+                    client_id=os.environ["AZURE_CLIENT_ID"],
+                    client_secret=os.environ["AZURE_CLIENT_SECRET"]
+                    ),
+            endpoint=os.environ.get("AIProjectEndpoint")
         )
 
         agent = project_client.agents.get_agent(agentid)
@@ -54,56 +83,50 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=404
             )
 
-        # Fix for the 'create_thread' method issue
         if not threadid:
-            # Create a new thread using the correct API
-            try:
-                # Try the newer API if available
-                thread_response = project_client.agents.create_thread()
-                thread_id = thread_response.id
-            except AttributeError:
-                # Fallback to direct REST API call if needed
-                logging.info("Using alternative method to create thread")
-                thread_response = project_client.agents.threads.create()
-                thread_id = thread_response.id
+            logging.info("Creating a new thread for the agent.")
+            thread_response = project_client.agents.threads.create()
+            thread_id = thread_response.id
         else:
+            logging.info(f"Using existing thread ID: {threadid}")
             thread_id = threadid
-            
-        # Create a message in the thread
-        message = project_client.agents.messages.create(
+
+        message_obj = project_client.agents.messages.create(
             thread_id=thread_id,
             role="user",
-            content=message
+            content=message_with_context
         )
 
-        # Process the message with the agent
-        project_client.agents.runs.create_and_process(
+        run = project_client.agents.runs.create(
             thread_id=thread_id,
             agent_id=agent.id
         )
+        while run.status not in ("completed", "failed"):
+            time.sleep(1)
+            run = project_client.agents.runs.get(thread_id=thread_id, run_id=run.id)
 
-        # Get the messages from the thread
-        messages = project_client.agents.messages.list(thread_id=thread_id)
-        assistant_messages = [m for m in messages if m["role"] == "assistant"]
-        if assistant_messages:
-            assistant_message = assistant_messages[-1]
-            assistant_text = " ".join(
-                part["text"]["value"] for part in assistant_message["content"] if "text" in part
-            )
-        else:
-            assistant_text = "No assistant message found."
-
-        # Return the response with the thread ID for continuity
-        #response_data = {
-        #    "message": assistant_text,
-        #    "threadId": thread_id
-        #}
-        
+        messages = list(project_client.agents.messages.list(thread_id=thread_id))
+        assistant_text = "No assistant message found."
+        for msg in messages:
+            if msg.role == "assistant":
+                if msg.content and isinstance(msg.content, list):
+                    for part in msg.content:
+                        if part.get("type") == "text" and "text" in part and "value" in part["text"]:
+                            raw_text = part["text"]["value"]
+                            logging.info("Respuesta del agente: %s", part["text"]["value"])
+                            assistant_text = raw_text
+                            break
+                break
+        response_data = {
+            "message": assistant_text,
+            "threadId": thread_id
+        }
         return func.HttpResponse(
-            json.dumps(assistant_text),
+            json.dumps(response_data),
             status_code=200,
             mimetype="application/json"
         )
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
         # Include more detailed error information for debugging
@@ -113,3 +136,12 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             "Internal Server Error: " + str(e),
             status_code=500
         )
+# Reduce el nivel de logging de Azure y requests para evitar ruido en consola
+
+
+logging.getLogger('azure').setLevel(logging.WARNING)
+logging.getLogger(
+    'azure.core.pipeline.policies.http_logging_policy'
+).setLevel(logging.WARNING)
+logging.getLogger('azure.storage').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.WARNING)
