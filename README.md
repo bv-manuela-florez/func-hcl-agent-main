@@ -24,7 +24,17 @@ This application:
 - Azure Functions Core Tools
 - Python 3.8 or later
 - Required libraries in `requirements.txt`
-- Azure Subscription for AI Projects and Azure Functions
+- Azure AI Foundry Project
+- **App Registration** in Azure Active Directory with permissions over the Azure AI Foundry resource to use the agent
+- An external Azure Function for document filtering and retrieval (e.g. by date), such as:
+  - `FUCTION_ENDPOINT`: URL of the Azure Function (e.g. `https://fa-aeu-hcl-dev-ia-synex-filter-01-bye6h8gya7bnehb4.eastus-01.azurewebsites.net/api/search_by_date`)
+  - `FUNCTION_KEY`: Access key for the Azure Function (if required)
+- Environment variables for endpoints and credentials:
+  - `AI_PROJECTS_ENDPOINT`
+  - `AZURE_TENANT_ID` (from App Registration)
+  - `AZURE_CLIENT_ID` (from App Registration)
+  - `AZURE_CLIENT_SECRET` (from App Registration)
+  - Any other required agent or function keys
 
 ## Installation
 
