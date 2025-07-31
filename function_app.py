@@ -2,12 +2,12 @@ import azure.functions as func
 import logging
 from azure.ai.projects import AIProjectClient
 from azure.ai.agents.models import ListSortOrder
-from azure.identity import DefaultAzureCredential, ClientSecretCredential
+from azure.identity import ClientSecretCredential
 import os
 import json
 import time
-import re
 import requests  # <-- Añade importación de requests
+from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 @app.route(route="agent_httptrigger")
@@ -72,7 +72,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
                     client_id=os.environ["AZURE_CLIENT_ID"],
                     client_secret=os.environ["AZURE_CLIENT_SECRET"]
                     ),
-            endpoint=os.environ.get("AIProjectEndpoint")
+            endpoint=os.environ.get("AI_PROJECT_ENDPOINT")
         )
 
         agent = project_client.agents.get_agent(agentid)
@@ -117,6 +117,45 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
                             assistant_text = raw_text
                             break
                 break
+
+        # Save chat history to Cosmos DB
+        try:
+            # Create ConversationChatInput for user message
+            user_input = ConversationChatInput(
+                message=message_with_context,
+                user_id=None,  # As per comment in model
+                user=None,     # As per comment in model
+                attachments=None  # As per comment in model
+            )
+
+            # Create ConversationChatResponse for agent response
+            agent_response = ConversationChatResponse(
+                task_id=thread_id,  # Using thread_id as task_id as per comment
+                task_status='InProgress',   # As per comment in model
+                context_id=None,    # As per comment in model
+                content=assistant_text,
+                citations=None,     # As per comment in model
+                safety_alert=None   # As per comment in model
+            )
+
+            # Create ConversationChat to save the full conversation
+            conversation = ConversationChat(
+                session_id=thread_id,  # Using thread_id as session_id
+                user_id=None,          # As per comment in model
+                token_usage=None,      # Could be populated if token usage info is available
+                feedback=None,         # As per comment in model
+                request=user_input,
+                response=agent_response,
+                updated=None          # As per comment in model
+            )
+
+            # Save to Cosmos DB
+            saved_conversation = conversation.save()
+            logging.info(f"Chat history saved successfully with ID: {saved_conversation.id}")
+
+        except Exception as e:
+            logging.error(f"Error saving chat history: {str(e)}")
+            # Continue execution even if saving fails
         response_data = {
             "message": assistant_text,
             "threadId": thread_id

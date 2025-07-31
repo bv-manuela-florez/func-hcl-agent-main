@@ -5,4 +5,16 @@
 azure-functions
 azure-ai-projects
 azure-identity
+azure-cosmos
+azure-core
+azure-storage-blob
+fastapi
+uvicorn
+pytz
+jinja2
+python-multipart
 aiohttp
+opencensus-ext-azure
+opencensus-ext-logging
+pydantic
+pydantic-settings
