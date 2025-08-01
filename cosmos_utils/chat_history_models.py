@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from cosmos_utils.cosmos_utils_orm import CosmosModel as CosmosModel
 from typing import List, Literal
+from azure.ai.agents.models import RunCompletionUsage
 
 
 def datetime_factory():
@@ -49,10 +50,9 @@ class Citation (BaseModel):
 
 
 class TokenUsage(BaseModel):
-    agent_id: str
-    total_tokens: int
-    prompt_tokens: int
-    completion_tokens: int
+    total_tokens: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 class SafetyAlert(BaseModel):
@@ -90,7 +90,7 @@ class ConversationChat(CosmosModel):
     # conversation_status: Literal["PendingRequest", "InProgress", "Completed"]
     session_id: str                                     # Thread_id
     user_id: str | None = None                          # None
-    token_usage: List[TokenUsage] | None = None
+    token_usage: TokenUsage | None = None
     feedback: List[Feedback] | None = None              # None
     request: ConversationChatInput                      # User message
     response: ConversationChatResponse | None = None    # Agent response

@@ -7,7 +7,7 @@ import os
 import json
 import time
 import requests  # <-- Añade importación de requests
-from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse
+from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse, TokenUsage
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 @app.route(route="agent_httptrigger")
@@ -105,6 +105,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             time.sleep(1)
             run = project_client.agents.runs.get(thread_id=thread_id, run_id=run.id)
 
+        token_usage_data = run.usage
         messages = list(project_client.agents.messages.list(thread_id=thread_id))
         assistant_text = "No assistant message found."
         for msg in messages:
@@ -138,11 +139,20 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
                 safety_alert=None   # As per comment in model
             )
 
+            # Convert token usage data to our custom model
+            custom_token_usage = None
+            if token_usage_data:
+                custom_token_usage = TokenUsage(
+                    total_tokens=getattr(token_usage_data, 'total_tokens', None),
+                    prompt_tokens=getattr(token_usage_data, 'prompt_tokens', None),
+                    completion_tokens=getattr(token_usage_data, 'completion_tokens', None)
+                )
+
             # Create ConversationChat to save the full conversation
             conversation = ConversationChat(
                 session_id=thread_id,  # Using thread_id as session_id
                 user_id=None,          # As per comment in model
-                token_usage=None,      # Could be populated if token usage info is available
+                token_usage=custom_token_usage,      # Could be populated if token usage info is available
                 feedback=None,         # As per comment in model
                 request=user_input,
                 response=agent_response,
