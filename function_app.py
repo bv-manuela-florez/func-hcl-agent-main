@@ -15,10 +15,10 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
     message = req.params.get('message')
-    agentid = req.params.get('agentid')
-    threadid = req.params.get('threadid')
+    agent_id = req.params.get('agent_id')
+    thread_id = req.params.get('thread_id')
 
-    if not message or not agentid:
+    if not message or not agent_id:
         try:
             req_body = req.get_json()
         except ValueError:
@@ -26,12 +26,12 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
 
         if req_body:
             message = req_body.get('message')
-            agentid = req_body.get('agentid')
-            threadid = req_body.get('threadid')
-    logging.info(f"Received message: {message}, agentid: {agentid}, threadid: {threadid}")
-    if not message or not agentid:
+            agent_id = req_body.get('agent_id')
+            thread_id = req_body.get('thread_id')
+    logging.info(f"Received message: {message}, agent_id: {agent_id}, thread_id: {thread_id}")
+    if not message or not agent_id:
         return func.HttpResponse(
-            "Pass in a message and agentid in the query string or in the request body for a personalized response.",
+            "Pass in a message and agent_id in the query string or in the request body for a personalized response.",
             status_code=400
         )
 
@@ -75,21 +75,21 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             endpoint=os.environ.get("AI_PROJECT_ENDPOINT")
         )
 
-        agent = project_client.agents.get_agent(agentid)
+        agent = project_client.agents.get_agent(agent_id)
         if not agent:
-            logging.error(f"Agent with ID {agentid} not found.")
+            logging.error(f"Agent with ID {agent_id} not found.")
             return func.HttpResponse(
-                f"Agent with ID {agentid} not found.",
+                f"Agent with ID {agent_id} not found.",
                 status_code=404
             )
 
-        if not threadid:
+        if not thread_id:
             logging.info("Creating a new thread for the agent.")
             thread_response = project_client.agents.threads.create()
             thread_id = thread_response.id
         else:
-            logging.info(f"Using existing thread ID: {threadid}")
-            thread_id = threadid
+            logging.info(f"Using existing thread ID: {thread_id}")
+            thread_id = thread_id
 
         message_obj = project_client.agents.messages.create(
             thread_id=thread_id,
@@ -168,7 +168,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             # Continue execution even if saving fails
         response_data = {
             "message": assistant_text,
-            "threadId": thread_id
+            "thread_id": thread_id
         }
         return func.HttpResponse(
             json.dumps(response_data),

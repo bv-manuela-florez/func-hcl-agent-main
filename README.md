@@ -81,16 +81,16 @@ This application:
 | Name       | Type   | Description                          |
 |------------|--------|--------------------------------------|
 | `message`  | string | The user message/question.           |
-| `agentid`  | string | The ID of the AI agent.              |
-| `threadid` | string | (Optional) The thread ID for context.|
+| `agent_id`  | string | The ID of the AI agent.              |
+| `thread_id` | string | (Optional) The thread ID for context.|
 
 ### Request Example
 
 ```json
 {
   "message": "¿Cual es la producción diaria gross desarrollo de la hocha del 12 de abril?",
-  "agentid": "agent123",
-  "threadid": "thread456"
+  "agent_id": "agent123",
+  "thread_id": "thread456"
 }
 ```
 
@@ -99,7 +99,7 @@ This application:
 ```json
 {
   "message": "La producción diaria gross desarrollo de la Hocha el 12 de abril de 2025 fue de 700 BOE. \n\nPuedes encontrar más detalles en el documento disponible [aquí](https://ecopetrol.sharepoint.com/sites/HOCOL-HOCOLBOT/Documentos%20compartidos/RP/RepDia_20250412(email).pdf)",
-  "threadId": "thread456"
+  "thread_id": "thread456"
 }
 ```
 
