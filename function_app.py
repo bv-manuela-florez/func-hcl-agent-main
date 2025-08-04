@@ -7,7 +7,7 @@ import os
 import json
 import time
 import requests  # <-- Añade importación de requests
-from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse, TokenUsage
+from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse, TokenUsage, Agent
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 @app.route(route="agent_httptrigger")
@@ -129,12 +129,20 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
                 attachments=None  # As per comment in model
             )
 
+            current_agent = Agent(
+                agent_id=agent.id,
+                agent_name=agent.name,
+                agent_description=agent.description
+            )
+
             # Create ConversationChatResponse for agent response
             agent_response = ConversationChatResponse(
                 task_id=thread_id,  # Using thread_id as task_id as per comment
                 task_status='InProgress',   # As per comment in model
                 context_id=None,    # As per comment in model
                 content=assistant_text,
+                agent_id=agent.id,  # Using agent ID from the project client
+                agent=current_agent,
                 citations=None,     # As per comment in model
                 safety_alert=None   # As per comment in model
             )

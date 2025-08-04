@@ -60,6 +60,12 @@ class SafetyAlert(BaseModel):
     reason: str | None = None
 
 
+class Agent(BaseModel):
+    agent_id: str
+    agent_name: str | None = None
+    agent_description: str | None = None
+
+
 class ConversationChatResponse(BaseModel):
     """
     Agent output message sent to the user.
@@ -69,7 +75,8 @@ class ConversationChatResponse(BaseModel):
     task_id: str | None = None                  # thread_id
     task_status: str | None = None              # 'InProgress'
     context_id: str | None = None               # None
-    agent: str = 'RAG agent'
+    agent_id: str
+    agent: Agent | None = None
     agent_tools: List[str] | None = None        # None
     content: str                                # Agent response
     citations: List[Citation] | None = None

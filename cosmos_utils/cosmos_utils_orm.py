@@ -9,6 +9,13 @@ from pydantic.main import BaseModel as PydanticModel
 from pydantic._internal._model_construction import ModelMetaclass as PydanticMetaclass
 from cosmos_utils.telemetry import logger
 
+# Set UTF-8 encoding for Windows to handle Unicode characters
+if os.name == 'nt':  # Windows
+    import sys
+    if hasattr(sys, '_setdefaultencoding'):
+        sys._setdefaultencoding('utf-8')
+    # Set environment variable to ensure UTF-8 encoding
+    os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 
 class TooManyObjectsFound(Exception):
     pass
@@ -159,10 +166,51 @@ class CosmosModel(PydanticModel, metaclass=Metaclass):
 
     @instance_connection
     def save(self):
-        upserted = self._meta.container.upsert_item(self.model_dump(by_alias=True))
-        print(f"Upserted item: {upserted}")
-        self.model_validate(upserted)
-        return self
+        try:
+            # Get the data to save
+            data = self.model_dump(by_alias=True)
+            
+            # Upsert the item to Cosmos DB
+            upserted = self._meta.container.upsert_item(data)
+            
+            # Use logger instead of print to avoid encoding issues
+            logger.info(f"Successfully saved item with ID: {upserted.get('id', 'unknown')}")
+            self.model_validate(upserted)
+            return self
+        except Exception as e:
+            logger.error(f"Error saving to Cosmos DB: {str(e)}")
+            # If there's an encoding error, try with cleaned data
+            if "codec" in str(e) or "charmap" in str(e):
+                logger.warning("Retrying save with Unicode character cleaning...")
+                data = self._clean_unicode_data(self.model_dump(by_alias=True))
+                upserted = self._meta.container.upsert_item(data)
+                logger.info(f"Successfully saved item with cleaned data, ID: {upserted.get('id', 'unknown')}")
+                self.model_validate(upserted)
+                return self
+            else:
+                raise
+    
+    def _clean_unicode_data(self, data):
+        """Recursively clean Unicode characters that might cause encoding issues."""
+        if isinstance(data, dict):
+            return {key: self._clean_unicode_data(value) for key, value in data.items()}
+        elif isinstance(data, list):
+            return [self._clean_unicode_data(item) for item in data]
+        elif isinstance(data, str):
+            # Handle Unicode characters more robustly
+            try:
+                # First, ensure the string is properly encoded as UTF-8
+                # This should work for most cases including emojis
+                return data.encode('utf-8', errors='replace').decode('utf-8')
+            except Exception:
+                # If there's still an issue, fall back to ASCII with replacement
+                try:
+                    return data.encode('ascii', errors='replace').decode('ascii')
+                except Exception:
+                    # Last resort: return a safe string
+                    return "[content with special characters]"
+        else:
+            return data
 
     @classmethod
     @class_connection
