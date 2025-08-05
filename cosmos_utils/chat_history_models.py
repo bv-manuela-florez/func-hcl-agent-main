@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from pydantic import BaseModel
 from cosmos_utils.cosmos_utils_orm import CosmosModel as CosmosModel
 from typing import List, Literal
@@ -74,7 +75,7 @@ class ConversationChatResponse(BaseModel):
     turn: str = 'assistant'
     task_id: str | None = None                  # thread_id
     task_status: str | None = None              # 'InProgress'
-    context_id: str | None = None               # None
+    context: str | None = None
     agent_id: str
     agent: Agent | None = None
     agent_tools: List[str] | None = None        # None
@@ -104,6 +105,6 @@ class ConversationChat(CosmosModel):
     updated: Fingerprint | None = None                  # None
 
     class Meta:
-        database_name: str = "aval_chat_history_db"
+        database_name: str = os.getenv("AZURE_COSMOS_DB_NAME")
         partition_key: str = "session_id"
-        container_name: str = "messages"
+        container_name: str = os.getenv("AZURE_COSMOS_DB_CONTAINER")

@@ -123,7 +123,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
         try:
             # Create ConversationChatInput for user message
             user_input = ConversationChatInput(
-                message=message_with_context,
+                message=message,
                 user_id=None,  # As per comment in model
                 user=None,     # As per comment in model
                 attachments=None  # As per comment in model
@@ -137,14 +137,14 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
 
             # Create ConversationChatResponse for agent response
             agent_response = ConversationChatResponse(
-                task_id=thread_id,  # Using thread_id as task_id as per comment
+                task_id=thread_id,          # Using thread_id as task_id as per comment
                 task_status='InProgress',   # As per comment in model
-                context_id=None,    # As per comment in model
+                context=context,            # As per comment in model
                 content=assistant_text,
-                agent_id=agent.id,  # Using agent ID from the project client
+                agent_id=agent.id,          # Using agent ID from the project client
                 agent=current_agent,
-                citations=None,     # As per comment in model
-                safety_alert=None   # As per comment in model
+                citations=None,             # As per comment in model
+                safety_alert=None           # As per comment in model
             )
 
             # Convert token usage data to our custom model
@@ -158,13 +158,13 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
 
             # Create ConversationChat to save the full conversation
             conversation = ConversationChat(
-                session_id=thread_id,  # Using thread_id as session_id
-                user_id=None,          # As per comment in model
-                token_usage=custom_token_usage,      # Could be populated if token usage info is available
-                feedback=None,         # As per comment in model
+                session_id=thread_id,               # Using thread_id as session_id
+                user_id=None,                       # As per comment in model
+                token_usage=custom_token_usage,     # Could be populated if token usage info is available
+                feedback=None,                      # As per comment in model
                 request=user_input,
                 response=agent_response,
-                updated=None          # As per comment in model
+                updated=None                        # As per comment in model
             )
 
             # Save to Cosmos DB
