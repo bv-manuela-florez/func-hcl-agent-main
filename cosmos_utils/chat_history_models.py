@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 import os
 from pydantic import BaseModel
 from cosmos_utils.cosmos_utils_orm import CosmosModel as CosmosModel
@@ -9,6 +10,13 @@ from azure.ai.agents.models import RunCompletionUsage
 def datetime_factory():
     return str(datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
+class MessageRole(str, Enum):
+    """The possible values for roles attributed to messages in a thread."""
+
+    USER = "user"
+    """The role representing the end-user."""
+    AGENT = "assistant"
+    """The role representing the agent."""
 
 class Feedback(BaseModel):
     feedback: Literal[-1, 0, 1]  # -1: negative, 0: neutral, 1: positive
@@ -32,6 +40,7 @@ class ConversationChatInput(BaseModel):
     user_id: str | None = None              # None
     user: User | None = None                # None
     message: str                            # User message
+    context: str | None = None              # Tables filtered from the Index
     attachments: List[str] | None = None    # None
     datetime: str = datetime_factory()
 
@@ -75,7 +84,7 @@ class ConversationChatResponse(BaseModel):
     turn: str = 'assistant'
     task_id: str | None = None                  # thread_id
     task_status: str | None = None              # 'InProgress'
-    context: str | None = None
+    context_id: str | None = None
     agent_id: str
     agent: Agent | None = None
     agent_tools: List[str] | None = None        # None
@@ -87,7 +96,7 @@ class ConversationChatResponse(BaseModel):
 
 
 class Fingerprint(BaseModel):
-    user_id: str
+    user_id: str | None = None
     datetime: str = datetime_factory()
 
 
@@ -98,7 +107,7 @@ class ConversationChat(CosmosModel):
     # conversation_status: Literal["PendingRequest", "InProgress", "Completed"]
     session_id: str                                     # Thread_id
     user_id: str | None = None                          # None
-    token_usage: TokenUsage | None = None
+    token_usage: List[TokenUsage] | None = None         # Lista de TokenUsage
     feedback: List[Feedback] | None = None              # None
     request: ConversationChatInput                      # User message
     response: ConversationChatResponse | None = None    # Agent response
