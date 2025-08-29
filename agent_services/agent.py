@@ -1,16 +1,22 @@
-import json
 import logging
 import os
 from tenacity import AsyncRetrying, retry_if_exception_type, wait_exponential, stop_after_attempt
-from cosmos_utils.chat_history_models import Citation, CitationRangeFile, ConversationChatResponse, MessageRole, TokenUsage, datetime_factory
+from cosmos_utils.chat_history_models import (
+    Citation,
+    CitationRangeFile,
+    ConversationChatResponse,
+    MessageRole,
+    TokenUsage,
+    datetime_factory,
+)
 from azure.core.exceptions import HttpResponseError
 from azure.identity import ClientSecretCredential
-from azure.ai.agents.aio import AgentsClient
 from azure.ai.projects.aio import AIProjectClient
 
 
 class RateLimitException(Exception):
     pass
+
 
 class AgentService:
     """
@@ -26,7 +32,7 @@ class AgentService:
     def __init__(self, thread_id: str | None = None, agent_id: str | None = None):
         self._agent_id = agent_id
         self._thread_id = thread_id
-        
+
         if not self._agent_id:
             raise ValueError("Agent ID is not set")
 
@@ -43,13 +49,13 @@ class AgentService:
                     credential=credentials,
                     endpoint=os.environ.get("AI_PROJECT_ENDPOINT")
                 )
-                
+
                 # Get the agent to verify it exists
                 agent = await self._project_client.agents.get_agent(self._agent_id)
                 if not agent:
                     logging.error(f"Agent with ID {self._agent_id} not found.")
                     raise ValueError(f"Agent with ID {self._agent_id} not found.")
-                
+
                 self._agent_client = self._project_client.agents
                 logging.debug("Agent client initialized successfully")
             except Exception as e:
@@ -105,7 +111,10 @@ class AgentService:
                         logging.warning(f"No response from agent or message failed for thread {self._thread.id}")
                         raise RateLimitException("Rate limit reached or message failed, retrying...")
                     if message_res.agent_id != agent_id:
-                        logging.warning(f"Agent mismatch. {self._thread.id}: expected {agent_id}, got {message_res.agent_id}")
+                        logging.warning(
+                            f"Agent mismatch. {self._thread.id}: expected {agent_id}, "
+                            f"got {message_res.agent_id}"
+                        )
                         raise ValueError(f"Agent ID mismatch: expected {agent_id}, got {message_res.agent_id}")
 
                     # Success - return the result
@@ -131,34 +140,34 @@ class AgentService:
             elif not self._thread and not self._thread_id:
                 self._thread = await self._agent_client.threads.create()
                 logging.debug(f"Thread created with ID: {self._thread.id}")
-    
+
         except HttpResponseError as e:
             logging.error(f"Error creating or getting thread: {e}")
             raise e
-    
+
     async def invoke(self, input: str | None):
         """ Function to get response from the agent."""
         try:
             retries = 0
-            
+
             # Initialize the client first
             await self._initialize_client()
-            
+
             assert self._agent_client is not None
             assert self._agent_id is not None
             await self.create_get_thread()
             assert self._thread is not None
             token_usage = []
-    
+
             if input is None:
                 raise ValueError("Input cannot be None")
-    
+
             try:
                 await self._agent_client.get_agent(self._agent_id)
             except Exception as e:
                 logging.error(f"Error retrieving agent: {e}")
                 raise Exception(f"Error retrieving agent: {e}")
-    
+
             try:
                 await self._agent_client.messages.create(
                     thread_id=self._thread.id,
@@ -168,12 +177,12 @@ class AgentService:
             except HttpResponseError as e:
                 logging.error(f"Error sending message for thread {self._thread.id}: {e}")
                 raise e
-    
+
             token_usage_response, message_res, retries_answer = await self._retryable_call_to_foundry(self._agent_id)
             retries += retries_answer
-    
+
             token_usage += [token_usage_response] if token_usage_response else []
-    
+
             citations = None
             if message_res.text_messages[0].text.annotations:
                 citations = [Citation(
@@ -187,7 +196,7 @@ class AgentService:
                     citationUrl=citation.file_citation.file_id,
                     abstract=None
                 ) for citation in message_res.text_messages[0].text.annotations]
-    
+
             response = ConversationChatResponse(
                 task_id=message_res.run_id,
                 task_status=message_res.status or "completed",
@@ -197,12 +206,12 @@ class AgentService:
                 retries=retries,
                 datetime=datetime_factory(),
             )
-    
+
             return response, token_usage, self._thread.id
         except Exception as e:
             logging.error(f"Error getting agent response: {e}")
             raise e
-    
+
     async def close(self):
         """Close the agent client."""
         if self._project_client:
