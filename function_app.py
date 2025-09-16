@@ -5,9 +5,10 @@ import json
 import asyncio
 import requests
 import traceback
-from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, ConversationChatResponse, Fingerprint, TokenUsage, Agent, datetime_factory
+from cosmos_utils.chat_history_models import ConversationChat, ConversationChatInput, Fingerprint, datetime_factory
 from agent_services.agent import AgentService
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
 
 @app.route(route="agent_httptrigger")
 def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
@@ -16,7 +17,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
     message = req.params.get('message')
     agent_id = req.params.get('agent_id')
     thread_id = req.params.get('thread_id')
-
+    thread_id_filter = req.params.get('thread_id_filter')
     if not message or not agent_id:
         try:
             req_body = req.get_json()
@@ -27,6 +28,7 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             message = req_body.get('message')
             agent_id = req_body.get('agent_id')
             thread_id = req_body.get('thread_id')
+            thread_id_filter = req_body.get('thread_id_filter')
     logging.info(f"Received message: {message}, agent_id: {agent_id}, thread_id: {thread_id}")
     if not message or not agent_id:
         return func.HttpResponse(
@@ -37,37 +39,51 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
     try:
         # Get context from search endpoint
         context = ""
-        search_endpoint = os.environ.get("FUCTION_ENDPOINT")
-        if search_endpoint:
-            search_params = {
-                "q": message,
-                "code": os.environ.get("FUNCTION_KEY")
-            }
-            logging.info(f"Calling search endpoint with params: {search_params}")
-            try:
-                search_response = requests.get(search_endpoint, params=search_params)
-                search_response.raise_for_status()
-                search_result = search_response.json()
-                docs = search_result.get("semantic_documents", [])
-                logging.info(f"Documentos obtenidos: {len(docs)}")
-                context = "\n\n".join([
-                    f"Titulo de la tabla: {doc.get('metadata_spo_item_table_title')}\n"
-                    f"Enlace al documento: {doc.get('metadata_spo_item_path')}\n\n"
-                    f"Markdown:\n{doc.get('markdown_content', '')}\n\n"
-                    f"Fecha del reporte: {doc.get('metadata_spo_item_release_date')}\n\n"
-                    for doc in docs
-                ])
-                logging.info(f"Contexto obtenido: {context}")
-            except Exception as e:
-                logging.error(f"Error al obtener documentos: {str(e)}")
-                context = ""
+        search_endpoint = os.environ.get("FUNCTION_ENDPOINT")
+        search_params = {
+            "q": message,
+            "code": os.environ.get("FUNCTION_KEY"),
+            "threadid": thread_id_filter or ""
+        }
+        logging.info(f"Calling search endpoint with params: {search_params}")
+        try:
+            search_response = requests.get(search_endpoint, params=search_params)
+            search_response.raise_for_status()
+            search_result = search_response.json()
+            filtered_results = search_result.get("parsed_date", [])
+            logging.info(f"Filtered results: {filtered_results}")
+            thread_id_filter = search_result.get("thread_id", [])
+            logging.info(f"Thread ID filter updated: {thread_id_filter}")
+            docs = search_result.get("semantic_documents", [])
+            num_docs = search_result.get("num_documents", [])
+            logging.info(f"Number of documents found: {num_docs}")
+            logging.info(f"Documentos obtenidos: {len(docs)}")
+            header = (
+                f"Numero de documentos: {num_docs}\n"
+            )
 
-        # Prepare message with context
-        message_with_context = message
+            # Detalles por documento (opcional)
+            doc_blocks = [
+                (
+                    f"Titulo de la tabla: {doc.get('metadata_spo_item_table_title')}\n"
+                    f"Markdown:\n{doc.get('markdown_content', '')}\n\n"
+                    f"Enlace al documento: {doc.get('metadata_spo_item_path')}\n\n"
+                    f"Fecha del reporte: {doc.get('metadata_spo_item_release_date')}\n\n\n\n\n"
+                )
+                for doc in docs
+            ]
+
+            context = header if not doc_blocks else header + "\n\n" + "\n\n".join(doc_blocks)
+            # logging.info(f"Contexto obtenido: {context}")
+            logging.info(f"Thread ID actualizado: {thread_id}")
+            message_with_context = f"Pregunta:\n{message}\n\nContexto:\n{context}"
+        except Exception as e:
+            logging.error(f"Error al obtener documentos: {str(e)}")
+            message_with_context = message
 
         # Run the async function call
-        result = asyncio.run(function_call_async(message_with_context, agent_id, thread_id, context))
-        
+        result = asyncio.run(function_call_async(message_with_context, agent_id, thread_id, thread_id_filter, context))
+
         return func.HttpResponse(
             json.dumps(result),
             status_code=200,
@@ -83,7 +99,14 @@ def agent_httptrigger(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500
         )
 
-async def function_call_async(message: str, agent_id: str, thread_id: str = None, context: str = "") -> dict:
+
+async def function_call_async(
+    message: str,
+    agent_id: str,
+    thread_id: str = None,
+    thread_id_filter: str = None,
+    context: str = ""
+) -> dict:
     """
     Async function to handle agent invocation and chat history saving.
     Based on the provided function_call logic.
@@ -102,7 +125,7 @@ async def function_call_async(message: str, agent_id: str, thread_id: str = None
         # Instantiate a new AgentService and invoke the agent
         agent_service = AgentService(thread_id=thread_id, agent_id=agent_id)
         agent_response, agent_token_usage, session_id = await agent_service.invoke(message)
-        
+
         if not agent_response:
             raise ValueError("Agent response is empty")
 
@@ -114,13 +137,14 @@ async def function_call_async(message: str, agent_id: str, thread_id: str = None
             response=agent_response,
             token_usage=agent_token_usage
         )
-        
+
         assert conversation.response is not None, "Agent response cannot be None"
 
         # Prepare the response data
         response_data = {
             "message": conversation.response.content,
             "thread_id": session_id,
+            "thread_id_filter": thread_id_filter,
             "agent_id": conversation.response.agent_id
         }
 
